@@ -113,3 +113,11 @@ jupyter notebook trade_construction.ipynb
 - IV > 500% annualised is treated as a data error and dropped.
 - Sharpe ratios are annualised using sqrt(52) for weekend sessions and sqrt(104)
   for weekday sessions.
+
+## Authors
+
+- Henry Huang
+- Harik Sodhi
+- Alphonsus Neo
+- Sikai Huang
+- Ishwar Karthik
