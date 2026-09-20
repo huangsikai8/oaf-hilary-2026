@@ -1,199 +1,412 @@
 # BTC Options Volatility Risk Premium — Oxford Alpha Fund (Hilary 2026)
 
-Does a volatility risk premium exist in short-dated BTC options, and can it be
-traded after costs?
-
-**Short answer.** The premium exists and is statistically significant. It is
-marginal after realistic execution cost, and the strategy that harvests it has
-been losing money in 2026.
+Investigation of the volatility risk premium (VRP) in short-dated BTC options,
+with a focus on day-of-week effects and systematic short-volatility trading strategies.
 
 ---
 
-## The strategy
+## Research Question
 
-**Premium-filtered short straddle on Deribit daily expiries.**
-
-At 08:00 UTC, for the expiry 24 hours out:
-
-1. Take the ATM call and put — strike closest to spot at open — priced from the
-   trade nearest 08:00 within a two-hour window.
-2. Compute the expected variance premium, `VRP̂ = σ_imp − σ̂_realised`, where
-   `σ_imp` is the average of the two ATM implied vols and `σ̂_realised` is a
-   day-of-week adjusted forecast built from trailing hourly realised vol.
-3. **Enter only if both hold:**
-   - `VRP̂ > 0` — implied exceeds the forecast.
-   - The straddle premium, as a share of spot, is above its **q-th percentile
-     over the trailing W sessions**.
-4. Sell both legs. Hold to expiry. No hedge, no stop, no wings.
-
-`W` and `q` are the only fitted quantities. Everything else is fixed in advance.
-
-### Why a premium filter
-
-It falls out of the fee schedule rather than out of the data. Deribit charges a
-near-fixed amount per contract, so the fee is a roughly constant **0.074% of
-spot** while the edge scales with implied vol. When vol is low the fee consumes
-the entire edge — 97% of it in 2026. The implication is mechanical: only trade
-when the premium is large enough to absorb a fixed cost.
-
-A *trailing percentile* rather than an absolute level is deliberate. An absolute
-threshold is an implied-vol level in disguise: the 2.6%-of-spot variant put 187
-of its 303 trades in 2021 and 5 in 2026. The percentile adapts to the regime and
-trades 18–74 times in every year of the sample.
+Does a statistically significant VRP exist in BTC options, and does it vary
+systematically between weekend and weekday sessions?
 
 ---
 
-## Headline result
+## Key Findings
 
-**Walk-forward, net of exchange fees, out of sample: Sharpe 1.14, t = 2.45**,
-over 4.60 years and 348 trades. Parameters re-selected every 60 sessions by grid
-search on strictly prior data — 29 refits.
-
-| Basis | Sharpe | t | Note |
-|---|---|---|---|
-| Walk-forward, net of exchange fees | **1.14** | **2.45** | the number to quote |
-| Same window, filter switched off | 0.46 | — | untuned control |
-| Walk-forward, after fees **and** measured spread | 0.70 | 1.49 | not significant |
-| Same, filter switched off | −0.18 | — | negative |
-
-The result is insensitive to the walk-forward start: 1.14 / 1.12 / 1.15 at
-burn-ins of 365 / 550 / 730 sessions. The 365 figure is quoted because it gives
-the longest out-of-sample span, not the best number — 730 is marginally higher.
-
-**Exchange fees are included in the 1.14** — entry fees and settlement fees. What
-is not included is the spread and the full execution model. See *Limits* below.
+- Weekend VRP is statistically significant (one-sided t-test, p = 0.008)
+- Sunday VRP significance: p < 0.001
+- Weekend short-vol strategy achieves annualised Sharpe of **1.18** (sqrt(52) scaling)
+- Weekday strategy Sharpe: **0.43** (sqrt(104) scaling)
+- Signal condition: VRP > 0.05 AND IV rank > 50 (relative to 52-week session-type benchmark)
 
 ---
 
-## Method
+## Strategy
 
-| Step | Choice |
-|---|---|
-| Search | Exhaustive grid, 15 candidates: `W ∈ {60, 120, 250}` × `q ∈ {0.3…0.7}` |
-| Objective | Net-of-fee Sharpe on the training slice |
-| Validation | Expanding-window walk-forward, refit every 60 sessions |
-| Control | Same strategy, filter removed — a zero-parameter rule that cannot be overfitted |
+A short ATM straddle hedged with a long OTM strangle (iron condor structure):
 
-All 15 grid cells beat the unfiltered control, spanning 1.06 to 1.76 in sample.
-The presented configuration (`W=250, q=0.70`) is deliberately not the peak: a
-result that survives across the whole surface is a property of the idea, whereas
-a lone peak is a fitted one.
+- **Short**: ATM call + ATM put (strikes closest to spot at session open)
+- **Long**: OTM call (strike ~ spot × 1.15) + OTM put (strike ~ spot × 0.85)
 
-Annualisation is by realised trade frequency, `Sharpe = mean/sd × √(N/years)`.
-The standard error is `≈ 1/√years` — set by sample **length**, not trade count,
-so ±0.42 in sample and ±0.47 out. Trading more often buys no confidence.
+Sessions are 24-hour windows using Deribit daily expiries:
+- **Weekend**: Saturday 08:00 UTC → Sunday 08:00 UTC
+- **Weekday**: Monday 08:00 UTC → Tuesday 08:00 UTC
+
+Entry prices are sourced from the first 2 hours of each session.
+Exit prices are computed as intrinsic value at expiry from BTC spot data.
 
 ---
 
-## Data
+## Methodology
 
-| Source | Coverage |
-|---|---|
-| Coinbase Exchange — hourly BTC-USD | 2021-01-01 → 2026-09-09, 49,843 bars |
-| Deribit public trade history — full traded chain per session | 2,076 sessions, 37,096 rows |
+1. **BTC Spot Data** (`dataCollection.py`) — Hourly OHLCV from Coinbase API (2021–2026).
+   Computes 5-day rolling realised volatility with **separate weekend/weekday buffers**
+   to avoid contamination between trading regimes.
 
-The original study ran 2023–2025. Deribit serves daily expiries from January
-2021, which nearly doubles the sample and cuts the Sharpe standard error from
-±0.58 to ±0.42.
+2. **Options Data** (`options_data_collection.py`) — Fetches BTC options trade data
+   from the Deribit public API. Paginates automatically. Flags legs where no trade
+   occurred within 2 hours of session open (`data_quality_ok = False`).
 
-**Deribit lists only a narrow strike band on daily expiries.** Probing every
-strike from 0.60× to 1.60× spot on the 12APR23 expiry returns 20 call strikes
-spanning 0.863×–1.079×. The ±15% iron condor described in the source literature
-is **not constructible** on this venue — a finding in its own right, and the
-reason this study trades a bare straddle.
+3. **IV Rank** (`iv.py`) — Computes ATM IV as the average of ATM call/put IVs
+   (put-call parity). IV rank is computed over a trailing 52-week window,
+   **benchmarked separately by session type** (weekend IVR vs weekend history only).
+   VRP = ATM IV − 5d Realised Vol.
 
----
+4. **Signal Generation** (`iv.py`) — Trade signal fires when:
+   - VRP > 0.05
+   - IV rank > 50
 
-## Limits
-
-**Execution.** Exchange fees are modelled. Bid-ask is measured (median effective
-spread 8.3% of premium, from aggressor-tagged trades on 245 instruments) and
-applied as a sensitivity, taking the result to 0.70. Not modelled at all:
-slippage beyond that spread, market impact, fill probability, partial fills,
-legging risk.
-
-**Portfolio.** No capital, margin, position sizing, liquidation, daily
-mark-to-market or return on collateral. This is dollar P&L on one contract, so
-it is **not a return-based Sharpe**, and the maximum drawdown is uninterpretable
-without a collateral base. The specific hazard left unmodelled: Deribit margin
-on short options rises with volatility, i.e. exactly when the position is losing.
-
-**Decay.** 2026 is negative — 40 trades, −$54 each. First half of the sample
-2.30, second half 1.38.
-
-**Tail.** Short volatility with no wings. Skew −1.43, worst trade −$4,809 net
-against a median gain of $364.
-
-**Inherited parameters.** The 08:00 session boundary, two-hour entry window,
-24-hour RV window, 12-observation day-of-week window and choice of daily expiry
-were fixed once on the original sample and never re-selected. They outnumber the
-two parameters fitted here, and nothing bounds their contribution.
+5. **Trade Construction & Backtesting** (`trade_construction.ipynb`) —
+   Constructs iron condor positions on signal sessions. PnL computed as:
+   `(entry_price × spot_at_expiry − exit_price) × contracts × position_sign`.
+   Outputs cumulative PnL, VRP distribution histograms, IV vs RV scatter, and
+   signal frequency by month.
 
 ---
 
-## Corrections to the original study
-
-Three defects were found and fixed in the rebuilt pipeline. The original scripts
-are unmodified and still contain them.
-
-1. **Look-ahead in the realised-vol benchmark.** A forward-looking average was
-   lagged one hour when it needed 24, putting up to 23 hours of a session's own
-   outcome inside the feature predicting it.
-2. **Entry premium converted at the wrong spot.** Premium is quoted in BTC and
-   received at entry, so it converts at spot at open — the original used spot at
-   expiry, a price unknown at trade time.
-3. **Degenerate early IV rank.** A one-observation minimum let the earliest
-   sessions rank against a zero-width range.
-
-The deck also states the day-of-week adjustment as `μ_DOW(t)/μ_DOW(t−1)` while
-the code normalises each factor by an all-days baseline first. The two differ by
-a factor with median 0.99991 and agree on the sign of `VRP̂` in 98.45% of
-sessions. Documented, not yet reconciled in code.
-
----
-
-## Repository
-
-### Current pipeline
+## Repository Structure
 
 ```
-collect_chain.py        full traded option chain per session  -> data/chain_df.csv
-collect_extended.py     four-leg legs, 2021-2026              -> data/options_df_ext.csv
-walkforward.py          leak-corrected features, walk-forward machinery
-strategy.py             the strategy end to end, all reported figures
-optimise.py             grid search + walk-forward validation
-audit_extended.py       coverage, fee model, null baselines
-compare_structures.py   straddle vs three butterfly variants + bootstrap
-```
-
-### Original study — retained, unmodified
-
-```
-dataCollection.py            Coinbase spot ingest
-options_data_collection.py   Deribit leg identification
-iv.py / iv2.py               IV rank, VRP, signal generation
-signals.py / signals2.py     threshold and z-score signals
-trade_construction.ipynb     original backtest
+├── dataCollection.py            # Coinbase spot data ingestion and RV computation
+├── options_data_collection.py   # Deribit options chain collection and leg identification
+├── iv.py                        # IV rank, VRP calculation, signal generation
+├── trade_construction.ipynb     # Strategy backtesting, PnL, statistical analysis
+├── requirements.txt
+├── presentation.pdf             # OAF Hilary 2026 pitch deck
+└── data/                        # Generated by running scripts (not tracked)
+    ├── btc_prices.csv
+    ├── sessions.csv
+    ├── options_df.csv
+    ├── session_signals.csv
+    ├── trades_df.csv
+    └── pnl_df.csv
 ```
 
 ---
 
-## Running it
+## Setup
 
 ```bash
 pip install -r requirements.txt
-
-python dataCollection.py     # hourly spot
-python collect_chain.py      # full chain, ~35 min, checkpoints every 60 sessions
-python strategy.py           # the strategy and its results
-python optimise.py           # grid search and walk-forward
 ```
 
-Collection is network-bound at roughly one session per second and resumes from
-its checkpoint if interrupted. The analysis scripts run offline in seconds.
+Enter deribit credentials when running dataCollection.py.
+
+Raw data is not tracked in this repo. Run scripts in order:
+
+```bash
+python dataCollection.py
+python options_data_collection.py
+python iv.py
+jupyter notebook trade_construction.ipynb
+```
 
 ---
 
+## Notes
+
+- Deribit daily expiries are listed and liquid from the previous day at 08:00 UTC,
+  so the target instrument exists at session open.
+- Legs with no trade within the 2-hour entry window are flagged but retained in
+  `options_df.csv` for auditability. Filter with `options_df[options_df['data_quality_ok']]`.
+- IV > 500% annualised is treated as a data error and dropped.
+- Sharpe ratios are annualised using sqrt(52) for weekend sessions and sqrt(104)
+  for weekday sessions.
+
 ## Authors
 
-Henry Huang · Harik Sodhi · Alphonsus Neo · Sikai Huang · Ishwar Karthik
+- Henry Huang
+- Harik Sodhi
+- Alphonsus Neo
+- Sikai Huang
+- Ishwar Karthik
+
+---
+
+# Premium-Filtered Short Straddle Extension
+
+This section documents the subsequent research added on the
+`premium-filtered-straddle` branch. The original study above is preserved for
+comparison and auditability.
+
+## Objective
+
+The extension asks a narrower question:
+
+> Can the one-day BTC volatility risk premium support an executable short ATM
+> straddle after exchange fees and bid-ask spread?
+
+The main conclusion is conditional. The premium filter adds value out of sample
+and keeps the strategy positive after the measured spread assumption, but the
+spread-adjusted evidence is not statistically strong enough for deployment.
+
+## Primary result
+
+The primary result is the dynamic expanding-window walk-forward test with a
+365-session initial burn-in. Parameters are selected using only prior data,
+held fixed for the next 60 non-overlapping sessions, and then reselected after
+the completed block is added to the training history.
+
+| OOS result | Sharpe-like statistic | Approx. t | Trades | Interpretation |
+|---|---:|---:|---:|---|
+| Gross | 1.57 | 3.36 | 379 | Before costs |
+| Net of exchange fees | **1.14** | **2.45** | 348 | Main result before spread |
+| Net of fees + measured spread | **0.70** | **1.49** | 348 | Conservative execution sensitivity |
+| Untuned control, net fees | 0.46 | 0.99 | 990 | Positive VRP, no premium filter |
+| Untuned control, fees + spread | −0.18 | −0.39 | 990 | Same OOS window |
+
+The `1.14` result includes exchange entry and settlement fees but excludes the
+bid-ask spread. Applying the measured half-spread reduces it to `0.70`. The
+filtered strategy remains above the control, but `t = 1.49` does not clear a
+conventional significance threshold.
+
+The metric is an annualised trade-level dollar-P&L ratio, not a conventional
+portfolio-return Sharpe:
+
+```text
+S = mean(trade P&L) / sd(trade P&L) × sqrt(number of trades / years)
+```
+
+No capital, margin, liquidation or position-sizing model is included.
+
+## Trading rule
+
+At 08:00 UTC, identify the ATM BTC call and put expiring 24 hours later. Enter a
+short straddle only when both conditions hold:
+
+1. Estimated volatility risk premium is positive:
+
+   ```text
+   VRP_hat = ATM implied volatility − forecast realised volatility > 0
+   ```
+
+2. The combined straddle premium is high relative to recent history:
+
+   ```text
+   premium / BTC spot > trailing q-th percentile over W sessions
+   ```
+
+The options are held to expiry without delta hedging, a stop-loss or protective
+wings.
+
+Premium divided by spot is closely related to implied volatility for an ATM
+option with fixed maturity:
+
+```text
+ATM straddle premium / spot ≈ implied volatility × sqrt(2T / pi)
+```
+
+The two entry conditions are therefore related. Positive VRP asks whether
+implied volatility exceeds the forecast; the premium filter restricts the
+strategy to relatively high-premium, high-IV regimes where fixed costs consume
+less of the available edge.
+
+## Walk-forward procedure
+
+The parameter grid is:
+
+```text
+W in {60, 120, 250}
+q in {0.3, 0.4, 0.5, 0.6, 0.7}
+```
+
+For each walk-forward block:
+
+1. Calculate the training result for all 15 `(W, q)` combinations.
+2. Discard candidates with fewer than 40 training trades.
+3. Select the eligible combination with the highest net-of-fee training
+   statistic.
+4. Apply that combination to the next 60 sessions.
+5. Record those trades once as out of sample.
+6. Expand the training history and repeat.
+
+Test dates do not overlap within a walk-forward run. Training histories do
+overlap because each successive fit contains all completed prior observations.
+
+### Burn-in sensitivity
+
+| Initial burn-in | OOS span | Gross | Net fees | Fees + spread | Spread-adjusted control |
+|---:|---:|---:|---:|---:|---:|
+| 365 sessions | 4.60y | 1.57 (t 3.36) | **1.14 (t 2.45)** | **0.70 (t 1.49)** | −0.18 (t −0.39) |
+| 550 sessions | 4.09y | 1.65 (t 3.33) | 1.12 (t 2.27) | 0.68 (t 1.38) | −0.16 (t −0.32) |
+| 730 sessions | 3.60y | 1.70 (t 3.23) | 1.15 (t 2.18) | 0.68 (t 1.30) | −0.28 (t −0.53) |
+
+The similar results show that the conclusion is not highly sensitive to the
+initial training length. These are sensitivity tests rather than independent
+confirmations because their OOS calendar periods overlap. The 365-session test
+is primary because it preserves the longest OOS history, not because it has the
+highest result.
+
+## Fixed-rule results are in sample
+
+The artifact also presents a fixed specification:
+
+```text
+W = 250 sessions
+q = 0.70
+```
+
+| Full-sample basis | Trades | Sharpe-like statistic | Approx. t |
+|---|---:|---:|---:|
+| Gross | 247 | 1.72 | 4.08 |
+| Net of exchange fees | 247 | 1.44 | 3.40 |
+| Net of fees + measured spread | 247 | 1.10 | 2.59 |
+
+These results use the full 2021–2026 sample after the specification was chosen.
+They are useful descriptive results but are not the primary validation. The
+fixed `(250, 0.70)` rule and the dynamic walk-forward procedure are different
+parameter treatments.
+
+## Parameter surface and controls
+
+Full-sample net-of-fee results for all 15 parameter combinations:
+
+| Lookback | q=0.3 | q=0.4 | q=0.5 | q=0.6 | q=0.7 |
+|---:|---:|---:|---:|---:|---:|
+| 60 | 1.31 | 1.42 | **1.76** | 1.43 | 1.09 |
+| 120 | 1.31 | 1.24 | 1.14 | 1.39 | 1.39 |
+| 250 | 1.23 | 1.28 | 1.19 | 1.06 | **1.44** |
+
+All 15 filtered cells beat the full-sample unfiltered control of `0.73`. This
+supports the general filtering idea but does not remove in-sample selection
+bias.
+
+| Full-sample control | Gross | Net fees | Fees + spread |
+|---|---:|---:|---:|
+| Positive VRP, no premium filter | 1.33 | 0.73 | 0.08 |
+| Sell every session | 0.57 | −0.15 | −0.92 |
+| Sell when VRP is negative | −0.48 | −0.90 | −1.35 |
+
+## Why the final strategy only sells
+
+The mirrored long-straddle rule was tested in the earlier framework. Buying
+when estimated VRP was negative produced a gross statistic of `0.49`, which
+fell to `0.07` after exchange fees (`t = 0.17`). A more selective legacy long
+rule reached `0.65` after fees (`t = 1.54`), still in sample and before spread.
+
+Negative VRP is therefore useful as a warning not to sell, but the current
+evidence does not establish an executable buy signal. The forecast also measures
+volatility over the full intraday path, whereas an unhedged straddle held to
+expiry is driven primarily by the terminal move.
+
+## Data and corrections
+
+| Source | Coverage |
+|---|---|
+| Coinbase Exchange hourly BTC-USD | 2021-01-01 to 2026-09-09; 49,843 bars |
+| Deribit public option trade history | 2,076 sessions; full traded daily-expiry chain |
+
+The rebuilt feature pipeline corrects three issues in the original study:
+
+1. A forward-looking realised-volatility average was lagged by one hour instead
+   of 24 hours, leaking part of the predicted session into its feature.
+2. BTC-denominated entry premium was converted using expiry spot instead of
+   spot at entry.
+3. Early IV-rank values were calculated with insufficient history.
+
+Forward 24-hour volatility observations are now delayed until their full
+outcome would have been known. The all-hours component is lagged by 24 hourly
+rows; the same-weekday component is lagged by one weekly group observation.
+
+## Structure selection
+
+Four expressions of the same short-volatility signal were compared:
+
+- bare ATM straddle;
+- wings nearest the intended 85%/115% strikes;
+- widest traded wings;
+- wings nearest 10-delta.
+
+The bare straddle performed best after fees because the purchased wings lost
+money historically and doubled the number of fee-paying legs. Removing the
+wings improves the backtest but leaves uncapped tail risk.
+
+The existing structure bootstrap independently resamples individual sessions.
+Its selection-bias estimate is exploratory: it does not preserve time-series
+dependence, does not implement White's Reality Check and does not cover every
+strategy and specification examined.
+
+## Costs and execution
+
+The fee model includes Deribit entry and in-the-money settlement fees, together
+with their applicable caps.
+
+The spread sensitivity uses a median effective full spread of 8.3% of option
+premium, estimated from aggressor-labelled trades on 245 instruments. Each leg
+is charged an estimated 4.1% half-spread. Because the same percentage is applied
+to each leg, this costs approximately 4.1% of the combined straddle premium—not
+8.2%.
+
+This is a proxy rather than a reconstruction of executable historical quotes.
+The following remain unmodelled:
+
+- additional slippage and market impact;
+- order-book depth and available size;
+- fill probability and partial fills;
+- timing differences and legging risk;
+- exchange or network interruption.
+
+## Limitations before deployment
+
+### Portfolio and margin
+
+There is no starting capital, return-based position sizing, initial or
+maintenance margin, intraday mark-to-market, liquidation, cash return or return
+on collateral. The results cannot yet be interpreted as portfolio Sharpes or
+returns on capital.
+
+### Tail risk
+
+The trade is a naked short straddle. Historical skew is `−1.43`; the worst
+observed net trade lost `$4,809` against a median net gain of `$364`. Historical
+maximum drawdown is approximately `$10,105`, but its portfolio meaning cannot
+be assessed without a capital and margin model.
+
+### Recent deterioration
+
+The fixed filtered rule lost approximately `$54` per trade across 40 trades in
+2026. The existing sample cannot determine whether this is temporary variation
+or structural decay.
+
+### Researcher degrees of freedom
+
+`W` and `q` are the two parameters explicitly optimised in the final filter.
+The broader process also includes the 60-session refit cadence, burn-in length,
+40-trade minimum, expanding training window, 08:00 boundary, two-hour entry
+window, 24-hour RV horizon and 12-observation weekday history. Stability across
+some choices does not eliminate selection bias from the complete research
+process.
+
+### Statistical inference
+
+The reported t-statistics are first-pass approximations. Financial volatility
+clusters, short-option P&L is negatively skewed, and the process may not be
+stationary. Dependence-aware block or stationary bootstrapping and a formal
+multiple-testing correction remain outstanding.
+
+## Extension repository guide
+
+| File | Purpose |
+|---|---|
+| `collect_extended.py` | Extend the selected-leg dataset to 2021–2026 |
+| `collect_chain.py` | Collect the full traded daily-expiry chain |
+| `walkforward.py` | Leak-corrected features and legacy walk-forward machinery |
+| `strategy.py` | Build straddle P&L and report the unfiltered VRP rule |
+| `optimise.py` | Premium-percentile grid and dynamic walk-forward validation |
+| `audit_extended.py` | Coverage, fee model, legacy long/short rules and controls |
+| `compare_structures.py` | Compare the straddle with three winged structures |
+
+Run the committed analysis inputs offline:
+
+```bash
+python strategy.py
+python optimise.py
+python audit_extended.py
+python compare_structures.py
+```
+
+The current `optimise.py` output covers gross and net-of-exchange-fee
+walk-forward results. The spread-adjusted walk-forward sensitivity above scores
+the same selected test blocks on `net_all`; it should be moved into a committed
+reproduction script before being treated as a final result.
