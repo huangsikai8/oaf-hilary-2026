@@ -150,7 +150,7 @@ the completed block is added to the training history.
 
 | OOS result | Sharpe-like statistic | Approx. t | Trades | Interpretation |
 |---|---:|---:|---:|---|
-| Gross | 1.57 | 3.36 | 379 | Before costs |
+| Gross | 1.56 | 3.35 | 348 | Before costs |
 | Net of exchange fees | **1.14** | **2.45** | 348 | Main result before spread |
 | Net of fees + measured spread | **0.70** | **1.49** | 348 | Conservative execution sensitivity |
 | Untuned control, net fees | 0.46 | 0.99 | 990 | Positive VRP, no premium filter |
@@ -228,9 +228,9 @@ overlap because each successive fit contains all completed prior observations.
 
 | Initial burn-in | OOS span | Gross | Net fees | Fees + spread | Spread-adjusted control |
 |---:|---:|---:|---:|---:|---:|
-| 365 sessions | 4.60y | 1.57 (t 3.36) | **1.14 (t 2.45)** | **0.70 (t 1.49)** | −0.18 (t −0.39) |
-| 550 sessions | 4.09y | 1.65 (t 3.33) | 1.12 (t 2.27) | 0.68 (t 1.38) | −0.16 (t −0.32) |
-| 730 sessions | 3.60y | 1.70 (t 3.23) | 1.15 (t 2.18) | 0.68 (t 1.30) | −0.28 (t −0.53) |
+| 365 sessions | 4.60y | 1.56 (t 3.35) | **1.14 (t 2.45)** | **0.70 (t 1.49)** | −0.18 (t −0.39) |
+| 550 sessions | 4.09y | 1.56 (t 3.15) | 1.12 (t 2.27) | 0.68 (t 1.38) | −0.16 (t −0.32) |
+| 730 sessions | 3.60y | 1.61 (t 3.05) | 1.15 (t 2.18) | 0.68 (t 1.30) | −0.28 (t −0.53) |
 
 The similar results show that the conclusion is not highly sensitive to the
 initial training length. These are sensitivity tests rather than independent
@@ -406,7 +406,7 @@ python audit_extended.py
 python compare_structures.py
 ```
 
-The current `optimise.py` output covers gross and net-of-exchange-fee
-walk-forward results. The spread-adjusted walk-forward sensitivity above scores
-the same selected test blocks on `net_all`; it should be moved into a committed
-reproduction script before being treated as a final result.
+`optimise.py` selects parameters using net-of-exchange-fee performance, then
+scores the same out-of-sample blocks, parameters and individual trades on gross,
+net-of-fee and spread-adjusted P&L. One run therefore reproduces all three
+headline walk-forward cost sensitivities on a single strategy.
